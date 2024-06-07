@@ -1,2 +1,11 @@
-# mmdi
-Multi-modal Demonstration Interface
+## MMDI: Multi-Modal Demonstration Interface
+
+
+### Installation Instructions
+
+
+
+
+### Usage Instructions
+
+

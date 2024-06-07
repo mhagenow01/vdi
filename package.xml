@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="2">
+    <name>mmdi</name>
+    <version>1.0.0</version>
+    <description>
+        Code to use Multi-modal Demonstration Interface
+    </description>
+    <maintainer email="wisconsinhci@gmail.com">Mike H.</maintainer>
+    <license>WTFPL</license>
+
+    <buildtool_depend>catkin</buildtool_depend>
+    <build_depend>message_generation</build_depend>
+    <exec_depend>message_runtime</exec_depend>
+    <depend>roscpp</depend>
+    <depend>std_msgs</depend>
+
+</package>
