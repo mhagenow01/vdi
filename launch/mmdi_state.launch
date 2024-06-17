@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<launch>
+
+  <node pkg="robot_pose_ekf" type="robot_pose_ekf" name="tool_pose_ekf">
+    <param name="output_frame" value="head_camera"/>
+    <param name="base_footprint_frame" value="odom"/>
+    <param name="freq" value="5.0"/>
+    <param name="sensor_timeout" value="1.0"/>
+    <param name="odom_used" value="false"/>
+    <param name="imu_used" value="false"/>
+    <param name="vo_used" value="true"/>
+    <param name="debug" value="false"/>
+    <param name="self_diagnose" value="false"/>
+  </node>
+
+  <node pkg="tf" type="static_transform_publisher" name="tagconverter_25" args="0 -0.058 -0.0274 0.5 0.5 0.5 -0.5  /tag_25 /tool_tag_25 300"/>
+  <node pkg="tf" type="static_transform_publisher" name="tagconverter_20" args="0 -0.083 -0.0274 0.5 0.5 0.5 -0.5  /tag_20 /tool_tag_20 300"/>
+  <node pkg="tf" type="static_transform_publisher" name="tagconverter_27" args="0 -0.123 -0.03469 0.5 0.5 0.5 -0.5  /tag_27 /tool_tag_27 300"/>
+  <node pkg="tf" type="static_transform_publisher" name="tagconverter_21" args="0 -0.123 -0.03469 -0.5 0.5 0.5 0.5  /tag_21 /tool_tag_21 300"/>
+  <node pkg="tf" type="static_transform_publisher" name="tagconverter_22" args="0 -0.123 -0.03469 -0.6830121 -0.183015 -0.183015 0.6830121  /tag_22 /tool_tag_22 300"/>
+  <node pkg="tf" type="static_transform_publisher" name="tagconverter_26" args="0 -0.123 -0.03469 0.183015 0.6830121 0.6830121 -0.183015   /tag_26 /tool_tag_26 300"/>
+  <node pkg="tf" type="static_transform_publisher" name="tagconverter_24" args="0 -0.123 -0.03469 -0.6830121 0.183015 0.183015 0.6830121   /tag_24 /tool_tag_24 300"/>
+  <node pkg="tf" type="static_transform_publisher" name="tagconverter_23" args="0 -0.123 -0.03469 0.183015 -0.6830121 -0.6830121 -0.183015   /tag_23 /tool_tag_23 300"/>
+</launch>
