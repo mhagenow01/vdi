@@ -41,7 +41,7 @@ class ModeHandler():
        
         self.led_pub = rospy.Publisher("led_state", String, queue_size=1)
         self.mode_pub = rospy.Publisher("/mode", Int32, queue_size=1)
-        self.freedrive_pub = rospy.Publisher("/mode", Bool, queue_size=1)
+        self.freedrive_pub = rospy.Publisher("/ur5e/free_drive", Bool, queue_size=1)
         rospy.Subscriber("tool_contact", Int32, self.storeToolContact)
         rospy.Subscriber("spacemouse_current_input", Bool, self.storeCurrSM)
         rospy.Subscriber("distance_odom_seen", Bool, self.storeOdomSeen)
@@ -96,7 +96,7 @@ class ModeHandler():
             print("   UF:",self.uniforce)
             print("   F_ft:",F_local[2])
 
-            return abs(self.uniforce-F_local[2])>8
+            return (F_local[2]-self.uniforce)>8 # only when pulling down
                 
         # if no tool_q transform, return false
         return False
@@ -161,9 +161,11 @@ class ModeHandler():
                 # Switch to Teleoperation (1)
                 if self.currSM: # TODO: maybe also some force discrepancy
                     new_mode = 1
+                    self.freedrive_pub.publish(Bool(False))
 
                 if self.toolContact==0:
                     new_mode = 4
+                    self.freedrive_pub.publish(Bool(False))
                     self.startmodefour = time.time()
 
 
@@ -191,7 +193,7 @@ class ModeHandler():
             # Set mode and command LEDs
             if new_mode!=self.mode:
                 self.mode = new_mode
-            self.led_pub.publish(String(self.mode_colors[self.mode]))
+                self.led_pub.publish(String(self.mode_colors[self.mode]))
             self.mode_pub.publish(Int32(self.mode))
             rate.sleep()
     

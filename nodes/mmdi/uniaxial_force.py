@@ -43,6 +43,8 @@ class UniaxialForceProcessor():
         rospy.Subscriber("/uniforce/raw", Float32, self.save_raw_force)
         self.uniforce_pub = rospy.Publisher("/uniforce/force", Float32, queue_size=1)
 
+        time.sleep(2)
+
         self.forceLoop()
 
     def save_raw_force(self,data):
@@ -57,19 +59,19 @@ class UniaxialForceProcessor():
             # Try to fetch current commanded EE location from TF
             try:
                 trans = self.tfBuffer.lookup_transform('base', 'toolnew', rospy.Time())
-                self.tool_q = np.array([trans.transform.rotation.x, trans.transform.rotation.y, trans.transform.rotation.z, trans.transform.rotation.w])
+                self.q_tool = np.array([trans.transform.rotation.x, trans.transform.rotation.y, trans.transform.rotation.z, trans.transform.rotation.w])
             except Exception as e:
-                pass
+                print(e)
             try:
                 # TODO: is the tool weight direction correct (test by flipping)
                 if not self.biased and self.q_tool is not None:
-                    toolN_local = ScipyR.from_quat(self.tool_q).inv().apply(np.array([0.0, 0.0, self.tool_N]))[2]
+                    toolN_local = ScipyR.from_quat(self.q_tool).inv().apply(np.array([0.0, 0.0, self.tool_N]))[2]
                     self.bias = self.F_tmp-toolN_local
                     self.biased = True
 
                 if self.biased:
-                    toolN_local = ScipyR.from_quat(self.tool_q).inv().apply(np.array([0.0, 0.0, self.tool_N]))[2]
-                    self.uniforce_pub.publish(Float32(self.F_tmp-self.bias-toolN_local))
+                    toolN_local = ScipyR.from_quat(self.q_tool).inv().apply(np.array([0.0, 0.0, self.tool_N]))[2]
+                    self.uniforce_pub.publish(Float32(-(self.F_tmp-self.bias-toolN_local)))
             except Exception as e:
                 print(e)
 

@@ -11,7 +11,7 @@ import rospy
 import sys
 from std_msgs.msg import String, Int32, Bool
 from geometry_msgs.msg import PoseStamped
-import tf2_geometry_msgs
+# from tf2_geometry_msgs import do_transform_pose
 from scipy.spatial.transform import Rotation as ScipyR
 import serial
 import signal
@@ -47,18 +47,28 @@ def camera_pose_residual(x,trans_tool,curr_pos, curr_rotvec, odom_pos,odom_q,tra
     pose_temp.pose.orientation.z = q_tmp[2]
     pose_temp.pose.orientation.w = q_tmp[3]
 
-    cam_proposed_tx = tf2_geometry_msgs.do_transform_pose(pose_temp, trans_tool_cam)
+    q_tool_cam = np.array([trans_tool_cam.transform.rotation.x, trans_tool_cam.transform.rotation.y, trans_tool_cam.transform.rotation.z, trans_tool_cam.transform.rotation.w])
+    p_tool_cam = np.array([trans_tool_cam.transform.translation.x, trans_tool_cam.transform.translation.y, trans_tool_cam.transform.translation.z])
 
-    cam_pos = np.array([cam_proposed_tx.transform.translation.x, cam_proposed_tx.transform.translation.y, cam_proposed_tx.transform.translation.z])
-    cam_q = np.array([cam_proposed_tx.transform.rotation.x, cam_proposed_tx.transform.rotation.y, cam_proposed_tx.transform.rotation.z, cam_proposed_tx.transform.rotation.w])
+    cam_pos = ScipyR.from_quat(q_tmp).apply(p_tool_cam)+np.array([pose_temp.pose.position.x, pose_temp.pose.position.y, pose_temp.pose.position.z])
+    R_tool_cam = ScipyR.from_quat(q_tool_cam)
+    R_tool = ScipyR.from_quat(q_tmp)
+    cam_q = (R_tool * R_tool_cam).as_quat()
+
+
     
-    desired_dist = 0.2
+    desired_dist = 0.3
+    print("OP:",odom_pos," cam:",cam_pos)
     cam_to_odom = odom_pos - cam_pos
     cam_to_odom_camframe = ScipyR.from_quat(cam_q).apply(cam_to_odom)
     loss0 = (abs(cam_to_odom_camframe[2])-desired_dist)**2.0 # tracking dist in z-axis of camera frame
 
+    print(abs(cam_to_odom_camframe[2]))
+    print(np.dot(vec_cam_odom,z_axis_cam))
+
+
     vec_cam_odom = (odom_pos-cam_pos) / np.linalg.norm(odom_pos-cam_pos)
-    z_axis_cam = ScipyR.from_quat(q_tmp).as_matrix()[:,2]
+    z_axis_cam = ScipyR.from_quat(cam_q).as_matrix()[:,2]
     loss1 = np.dot(vec_cam_odom,z_axis_cam)**2.0
 
     # TODO: add a loss away from edges of space
@@ -104,6 +114,7 @@ class NaturalHandler():
     def main(self):
         rate = rospy.Rate(10) # hz
         while not rospy.is_shutdown():
+            # print(self.robot_camera_active,self.robot_pose_received)
             if not self.robot_camera_active:
                 try:
                     trans = self.tfBuffer.lookup_transform('head_camera', 'odom', rospy.Time())
@@ -123,9 +134,10 @@ class NaturalHandler():
                         curr_pos = np.array([trans.transform.translation.x, trans.transform.translation.y, trans.transform.translation.z])
                         curr_q = np.array([trans.transform.rotation.x, trans.transform.rotation.y, trans.transform.rotation.z, trans.transform.rotation.w])                           
                         
-                        self.got_robot_pose = True
                         self.curr_pos = curr_pos.copy()
                         self.curr_q = curr_q.copy()
+
+                        self.robot_pose_received = True
                     except Exception as e:
                         print(e)
                 else:
@@ -135,11 +147,12 @@ class NaturalHandler():
                         trans_odom = self.tfBuffer.lookup_transform('base', 'odom', rospy.Time())
                         odom_pos  = np.array([trans_odom.transform.translation.x, trans_odom.transform.translation.y, trans_odom.transform.translation.z])
                         odom_q = np.array([trans_odom.transform.rotation.x, trans_odom.transform.rotation.y, trans_odom.transform.rotation.z, trans_odom.transform.rotation.w])    
+                        # TODO: only if odom is not stale
                         self.optimizePose(trans_tool, odom_pos, odom_q)
                     
                     except Exception as e:
                         print(e)    
-                    pass
+                    
             rate.sleep()
         if self._p is not None:
             self._p.terminate() 
@@ -164,8 +177,8 @@ class NaturalHandler():
     def optimizePose(self, trans_tool, odom_pos, odom_q):
 
         # Set up limits (in the toolnew [command] frame)
-        cart_mins = np.array([0.0, 0.0, 0.1])
-        cart_maxs = np.array([0.8, 0.8, 1.2])
+        cart_mins = np.array([-0.3, -0.05, 0.1])
+        cart_maxs = np.array([0.3, -0.35, 1.2])
 
         delta_pos_max = 0.01 # 10Hz (i.e., move 10x per second)
         delta_rot_max = 0.02 # 10Hz
@@ -184,7 +197,8 @@ class NaturalHandler():
         pose0 = np.zeros((6))
         res = minimize(camera_pose_residual, pose0, bounds=bounds,args=(trans_tool, curr_pos, curr_rotvec, odom_pos,odom_q,self.trans_tool_cam), method='SLSQP', options={'disp': False,'maxiter': 50})
 
-        print(res)
+        # print(res)
+        print(res.x)
          
         # Saturation TODO: make sure this works :)
         new_pos = curr_pos+res.x[0:3]

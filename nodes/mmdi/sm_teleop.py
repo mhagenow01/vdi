@@ -33,7 +33,7 @@ class SMTeleop:
 
     def checkMode(self,data):
         # Mode 1 is teleoperation
-        if data.data=='1':
+        if data.data==1:
             self.teleopMode = True
         else:
             self.teleopMode = False
@@ -42,6 +42,7 @@ class SMTeleop:
     def main(self):
         rate = rospy.Rate(self.samprate)
         while not rospy.is_shutdown():
+            print(self.teleopMode,self.got_robot_pose)
             if self.teleopMode and not self.got_robot_pose:
                 try:
                     trans = self.tfBuffer.lookup_transform('base', 'toolnew', rospy.Time())
