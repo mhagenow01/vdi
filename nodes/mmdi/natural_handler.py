@@ -13,6 +13,7 @@ from std_msgs.msg import String, Int32, Bool
 from geometry_msgs.msg import PoseStamped
 # from tf2_geometry_msgs import do_transform_pose
 from scipy.spatial.transform import Rotation as ScipyR
+from scipy.spatial.transform import Slerp
 import serial
 import signal
 import time
@@ -29,7 +30,7 @@ def signal_handler(nh,sig, frame):
         nh._p.terminate() 
     sys.exit(0)
 
-def camera_pose_residual(x,trans_tool,curr_pos, curr_rotvec, odom_pos,odom_q,trans_tool_cam):
+def camera_pose_residual(x,curr_pos, curr_rotvec, odom_pos,odom_q,trans_tool_cam):
     ''' Calculates a loss for camera shared control objectives '''
 
     pose_temp = PoseStamped()
@@ -58,23 +59,24 @@ def camera_pose_residual(x,trans_tool,curr_pos, curr_rotvec, odom_pos,odom_q,tra
 
     
     desired_dist = 0.3
-    print("OP:",odom_pos," cam:",cam_pos)
     cam_to_odom = odom_pos - cam_pos
     cam_to_odom_camframe = ScipyR.from_quat(cam_q).apply(cam_to_odom)
     loss0 = (abs(cam_to_odom_camframe[2])-desired_dist)**2.0 # tracking dist in z-axis of camera frame
 
-    print(abs(cam_to_odom_camframe[2]))
-    print(np.dot(vec_cam_odom,z_axis_cam))
-
 
     vec_cam_odom = (odom_pos-cam_pos) / np.linalg.norm(odom_pos-cam_pos)
     z_axis_cam = ScipyR.from_quat(cam_q).as_matrix()[:,2]
-    loss1 = np.dot(vec_cam_odom,z_axis_cam)**2.0
+    loss1 = (np.dot(vec_cam_odom,z_axis_cam)-1.0)**2.0
+
+    # penalize moving more than rotating
+    loss2 = np.linalg.norm(x[0:3])+0.1*np.linalg.norm(x[3:6]) 
+
 
     # TODO: add a loss away from edges of space
 
-    weights = np.array([1.0, 1.0])
-    loss = np.array([loss0, loss1])
+    weights = np.array([100.0, 100.0, 0.5])
+    loss = np.array([loss0, loss1, loss2])
+    # print(np.multiply(weights,loss))
     return np.dot(weights,loss)
 
 
@@ -136,6 +138,9 @@ class NaturalHandler():
                         
                         self.curr_pos = curr_pos.copy()
                         self.curr_q = curr_q.copy()
+                        self.starting_pos = curr_pos.copy()
+                        self.starting_q = curr_q.copy()
+
 
                         self.robot_pose_received = True
                     except Exception as e:
@@ -143,12 +148,14 @@ class NaturalHandler():
                 else:
                     # camera pose optimization 
                     try:
-                        trans_tool = self.tfBuffer.lookup_transform('base', 'toolnew', rospy.Time())
                         trans_odom = self.tfBuffer.lookup_transform('base', 'odom', rospy.Time())
                         odom_pos  = np.array([trans_odom.transform.translation.x, trans_odom.transform.translation.y, trans_odom.transform.translation.z])
                         odom_q = np.array([trans_odom.transform.rotation.x, trans_odom.transform.rotation.y, trans_odom.transform.rotation.z, trans_odom.transform.rotation.w])    
                         # TODO: only if odom is not stale
-                        self.optimizePose(trans_tool, odom_pos, odom_q)
+                        print("TIMEY:",(rospy.Time.now() - trans_odom.header.stamp).to_sec()<0.2)
+                        new_pos, new_q = self.optimizePose(self.curr_pos, self.curr_q, odom_pos, odom_q, self.starting_pos, self.starting_q)
+                        self.curr_pos = new_pos.copy()
+                        self.curr_q = new_q.copy()
                     
                     except Exception as e:
                         print(e)    
@@ -174,17 +181,14 @@ class NaturalHandler():
             self.odom_seen_pub.publish(Bool(False))
 
 
-    def optimizePose(self, trans_tool, odom_pos, odom_q):
+    def optimizePose(self, curr_pos, curr_q, odom_pos, odom_q, starting_pos, starting_q):
 
         # Set up limits (in the toolnew [command] frame)
-        cart_mins = np.array([-0.3, -0.05, 0.1])
-        cart_maxs = np.array([0.3, -0.35, 1.2])
+        cart_mins = np.array([-0.3, -0.55, 0.2])
+        cart_maxs = np.array([0.3, -0.25, 0.5])
 
-        delta_pos_max = 0.01 # 10Hz (i.e., move 10x per second)
-        delta_rot_max = 0.02 # 10Hz
-
-        curr_pos = np.array([trans_tool.transform.translation.x, trans_tool.transform.translation.y, trans_tool.transform.translation.z])
-        curr_q = np.array([trans_tool.transform.rotation.x, trans_tool.transform.rotation.y, trans_tool.transform.rotation.z, trans_tool.transform.rotation.w])
+        delta_pos_max = 0.001 # 10Hz (i.e., move 10x per second)
+        delta_rot_max = 0.008 # 10Hz
 
         curr_rotvec = ScipyR.from_quat(curr_q).as_rotvec()
 
@@ -195,35 +199,43 @@ class NaturalHandler():
         # TODO: update bounds based on constraints?
 
         pose0 = np.zeros((6))
-        res = minimize(camera_pose_residual, pose0, bounds=bounds,args=(trans_tool, curr_pos, curr_rotvec, odom_pos,odom_q,self.trans_tool_cam), method='SLSQP', options={'disp': False,'maxiter': 50})
+        res = minimize(camera_pose_residual, pose0, bounds=bounds,args=(curr_pos, curr_rotvec, odom_pos,odom_q,self.trans_tool_cam), method='SLSQP', options={'disp': False,'maxiter': 50})
 
         # print(res)
-        print(res.x)
+        # print(res.x)
          
         # Saturation TODO: make sure this works :)
         new_pos = curr_pos+res.x[0:3]
         new_pos = np.minimum(cart_maxs,new_pos)
         new_pos = np.maximum(cart_mins,new_pos)
         new_ang = curr_rotvec + res.x[3:6]
-        if np.linalg.norm(new_ang) > ang_max:
-            new_ang = ang_max * (new_ang / np.linalg.norm(new_ang))
+
+        R_orig_ang = ScipyR.from_quat(starting_q)
+        R_new_ang = ScipyR.from_rotvec(new_ang)
+        delta = np.linalg.norm((R_new_ang.inv()*R_orig_ang).as_rotvec())
+        print(delta)
+        if delta > ang_max:
+            slerper = Slerp([0,delta], [R_orig_ang, R_new_ang])
+            new_ang = slerper(ang_max).as_rotvec()
         
         new_q = ScipyR.from_rotvec(new_ang).as_quat()
+
+        print(new_pos,new_q)
         
         # TODO: test publish desired pose
-        # pose_out = PoseStamped()
-        # pose_out.header.frame_id = 'map'
-        # pose_out.header.stamp = rospy.Time.now()
-        # pose_out.pose.position.x = new_pos[0]
-        # pose_out.pose.position.y = new_pos[1]
-        # pose_out.pose.position.z = new_pos[2]
-        # pose_out.pose.orientation.x = new_q[0]
-        # pose_out.pose.orientation.y = new_q[1]
-        # pose_out.pose.orientation.z = new_q[2]
-        # pose_out.pose.orientation.w = new_q[3]
-        # self.posepub.publish(pose_out)
+        pose_out = PoseStamped()
+        pose_out.header.frame_id = 'map'
+        pose_out.header.stamp = rospy.Time.now()
+        pose_out.pose.position.x = new_pos[0]
+        pose_out.pose.position.y = new_pos[1]
+        pose_out.pose.position.z = new_pos[2]
+        pose_out.pose.orientation.x = new_q[0]
+        pose_out.pose.orientation.y = new_q[1]
+        pose_out.pose.orientation.z = new_q[2]
+        pose_out.pose.orientation.w = new_q[3]
+        self.pose_pub.publish(pose_out)
 
-
+        return new_pos, new_q
 
 if __name__ == "__main__":
     nh = NaturalHandler()

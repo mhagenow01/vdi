@@ -39,6 +39,18 @@ class ModeHandler():
     def __init__(self, simulated=False):
         rospy.init_node('mode_handler', anonymous=True)
        
+        # Initial Assumed State
+        self.toolContact = 1
+
+        self.tool_q = None
+
+        self.currSM = False
+        self.uniforce = None
+        self.uniforcetime = None
+        self.odomSeen = False
+        
+        self.discrepancy_samps = 0
+
         self.led_pub = rospy.Publisher("led_state", String, queue_size=1)
         self.mode_pub = rospy.Publisher("/mode", Int32, queue_size=1)
         self.freedrive_pub = rospy.Publisher("/ur5e/free_drive", Bool, queue_size=1)
@@ -55,15 +67,7 @@ class ModeHandler():
 
         rospy.sleep(2)
 
-        # Initial Assumed State
-        self.toolContact = 1
-
-        self.tool_q = None
-
-        self.currSM = False
-        self.uniforce = None
-        self.odomSeen = False
-
+        
         self.mode = -1 # non value to start
         self.mode_colors = ['r','g','y','b','s']
        
@@ -76,9 +80,12 @@ class ModeHandler():
 
     def storeUniForce(self,data):
         self.uniforce = data.data
+        self.uniforcetime = rospy.Time.now()
     
     def storeWrenchGlobal(self,data):
-        self.wrenchglobal = data.wrench
+        if self.uniforcetime is not None: # only store samples that are coordinated with the lower rate uniforce time
+            if (rospy.Time.now()-self.uniforcetime).to_sec() < 0.01:
+                self.wrenchglobal = data.wrench
 
     def storeToolContact(self,data):
         self.toolContact = data.data
@@ -96,8 +103,17 @@ class ModeHandler():
             print("   UF:",self.uniforce)
             print("   F_ft:",F_local[2])
 
-            return (F_local[2]-self.uniforce)>8 # only when pulling down
-                
+            # use sample counting to get around filter induced debouncing
+            if (F_local[2]-self.uniforce)>8: # only when pulling down
+                self.discrepancy_samps += 1
+            else:
+                self.discrepancy_samps = 0 
+
+            if self.discrepancy_samps >= 3: #3/5 seconds
+                return True
+            else:
+                return False
+
         # if no tool_q transform, return false
         return False
 

@@ -8,9 +8,7 @@
   <node pkg="mmdi" type="uniaxial_force.py" name="uniaxial_force"/>
 
   <node pkg="tf" type="static_transform_publisher" name="hande_frame_converter" args="0 0 0 0.7071068 0.7071068 0 0  /hand_e_link /hande_link_tool 300"/>
-  <node pkg="tf" type="static_transform_publisher" name="camera_frame_converter" args="0.1023 0 0.0134 0.69636424 0.69636424 0.1227878 -0.1227878  /hande_link_tool /head_camera 300"/>
+  <node pkg="tf" type="static_transform_publisher" name="camera_frame_converter" args="0.0852152 0 -0.0604003 -0.69636424 0.69636424 0.1227878 -0.1227878  /hande_link_tool /head_camera 300"/>
   <node pkg="mmdi" type="sm_teleop.py" name="sm_teleop"/>
 
-  <!-- <include file="$(find ur5e_control)/launch/no_gripper_compliant_ur5e.launch"/> -->
-  <!-- add static transforms to relate the robot, new tool, camera, etc!-->
 </launch>

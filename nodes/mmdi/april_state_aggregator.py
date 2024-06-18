@@ -56,7 +56,7 @@ class AprilStateAggregator():
 
                 # look up transformed to tool location
                 try:
-                    trans = self.tfBuffer.lookup_transform('base', 'tool_'+data.transforms[ii].child_frame_id, rospy.Time()) # TODO: move to actual transform
+                    trans = self.tfBuffer.lookup_transform('head_camera', 'tool_'+data.transforms[ii].child_frame_id, rospy.Time()) # TODO: move to actual transform
                 
                     ###############################################
                     # Publish as odometry (for robot_pose_ekf   ) #
@@ -66,7 +66,7 @@ class AprilStateAggregator():
                     od_tmp = Odometry()
                     od_tmp.header.seq = self.seq
                     od_tmp.header.stamp = rospy.Time.now()
-                    od_tmp.header.frame_id = 'base'
+                    od_tmp.header.frame_id = 'head_camera'
                     self.seq+=1
 
                     od_tmp.child_frame_id = 'tool'
