@@ -14,6 +14,8 @@ from geometry_msgs.msg import WrenchStamped
 import tf2_ros
 from scipy.spatial.transform import Rotation as ScipyR
 
+import os
+
 import serial
 import signal
 import time
@@ -64,6 +66,7 @@ class ModeHandler():
         self.listener = tf2_ros.TransformListener(self.tfBuffer)
 
         self.startmodezero = time.time()
+        self.lastNoContact = None
 
         rospy.sleep(2)
 
@@ -100,8 +103,8 @@ class ModeHandler():
             F_global = np.array([self.wrenchglobal.force.x, self.wrenchglobal.force.y, self.wrenchglobal.force.z])
             F_local = R_tool_global.inv().apply(F_global)
 
-            print("   UF:",self.uniforce)
-            print("   F_ft:",F_local[2])
+            # print("   UF:",self.uniforce)
+            # print("   F_ft:",F_local[2])
 
             # use sample counting to get around filter induced debouncing
             if (F_local[2]-self.uniforce)>8: # only when pulling down
@@ -135,6 +138,8 @@ class ModeHandler():
             ####################
             new_mode = self.mode
 
+            print("MODE ",self.mode)
+
             if self.mode==-1: 
                 # valid (and assumed) tx is 0
                 new_mode = 0 # start with no input
@@ -155,21 +160,38 @@ class ModeHandler():
                     
                     # 4 Switch to (pre) Natural (4)
                     if self.toolContact==0:
-                        new_mode = 4
-                        self.startmodefour = time.time()
+                        if self.lastNoContact is None:
+                            self.lastNoContact = time.time()
+                        if (time.time()-self.lastNoContact) > 1:
+                            new_mode = 4
+                            self.startmodefour = time.time()
+                    else:
+                        self.lastNoContact = None
 
             if self.mode==1:
                 # valid tx is to 2 and 4
+
+
+                # play sound for force sensor
+                if abs(self.uniforce)>0.5*9.8:
+                    print("   PLAYING: ",66*abs(self.uniforce)-2)
+                    os.system('play -nq -t alsa synth {} sine {}'.format(0.2, 66*(abs(self.uniforce)-0.5*9.8)))
+                
 
                 # Switch to Kinesthetic (2)
                 if self.forceDiscrepancy():
                     new_mode = 2
                     self.freedrive_pub.publish(Bool(True))
 
-                # Switch to (pre) Natural (4)
+                 # 4 Switch to (pre) Natural (4)
                 if self.toolContact==0:
-                    new_mode = 4
-                    self.startmodefour = time.time()
+                    if self.lastNoContact is None:
+                        self.lastNoContact = time.time()
+                    if (time.time()-self.lastNoContact) > 1:
+                        new_mode = 4
+                        self.startmodefour = time.time()
+                else:
+                    self.lastNoContact = None
 
             if self.mode==2:
                 # valid tx is to 1
@@ -179,10 +201,21 @@ class ModeHandler():
                     new_mode = 1
                     self.freedrive_pub.publish(Bool(False))
 
+                # 4 Switch to (pre) Natural (4)
+                if self.lastNoContact is not None:
+                    print("TOOL CONTACT:",self.toolContact," ",time.time()-self.lastNoContact)
+                else:
+                    print("TOOL CONTACT:",self.toolContact,"  NO TIME")
                 if self.toolContact==0:
-                    new_mode = 4
-                    self.freedrive_pub.publish(Bool(False))
-                    self.startmodefour = time.time()
+                    if self.lastNoContact is None:
+                        self.lastNoContact = time.time()
+                    if (time.time()-self.lastNoContact) > 1:
+                        new_mode = 4
+                        self.freedrive_pub.publish(Bool(False))
+                        self.startmodefour = time.time()
+                else:
+                    self.lastNoContact = None
+
 
 
             if self.mode==3:

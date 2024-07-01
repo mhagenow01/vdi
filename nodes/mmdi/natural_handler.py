@@ -19,6 +19,7 @@ import signal
 import time
 from functools import partial
 import subprocess32
+import os
 
 from scipy.optimize import minimize
 
@@ -152,10 +153,15 @@ class NaturalHandler():
                         odom_pos  = np.array([trans_odom.transform.translation.x, trans_odom.transform.translation.y, trans_odom.transform.translation.z])
                         odom_q = np.array([trans_odom.transform.rotation.x, trans_odom.transform.rotation.y, trans_odom.transform.rotation.z, trans_odom.transform.rotation.w])    
                         # TODO: only if odom is not stale
-                        print("TIMEY:",(rospy.Time.now() - trans_odom.header.stamp).to_sec()<0.2)
-                        new_pos, new_q = self.optimizePose(self.curr_pos, self.curr_q, odom_pos, odom_q, self.starting_pos, self.starting_q)
-                        self.curr_pos = new_pos.copy()
-                        self.curr_q = new_q.copy()
+
+                        stale = (rospy.Time.now() - trans_odom.header.stamp).to_sec()>0.4
+                        print(stale)
+                        if not stale:
+                            new_pos, new_q = self.optimizePose(self.curr_pos, self.curr_q, odom_pos, odom_q, self.starting_pos, self.starting_q)
+                            self.curr_pos = new_pos.copy()
+                            self.curr_q = new_q.copy()
+                        else:
+                            os.system('play -nq -t alsa synth {} sine {}'.format(0.2, 440))
                     
                     except Exception as e:
                         print(e)    
