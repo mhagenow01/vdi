@@ -13,8 +13,8 @@
     <param name="self_diagnose" value="false"/>
   </node>
 
-  <node pkg="tf" type="static_transform_publisher" name="tagconverter_25" args="0 -0.058 -0.0274 0.5 0.5 0.5 -0.5  /tag_25 /tool_tag_25 300"/>
-  <node pkg="tf" type="static_transform_publisher" name="tagconverter_20" args="0 -0.083 -0.0274 0.5 0.5 0.5 -0.5  /tag_20 /tool_tag_20 300"/>
+  <node pkg="tf" type="static_transform_publisher" name="tagconverter_25" args="0 -0.048 -0.0274 0.5 0.5 0.5 -0.5  /tag_25 /tool_tag_25 300"/>
+  <node pkg="tf" type="static_transform_publisher" name="tagconverter_20" args="0 -0.073 -0.0274 0.5 0.5 0.5 -0.5  /tag_20 /tool_tag_20 300"/>
   <node pkg="tf" type="static_transform_publisher" name="tagconverter_27" args="0 -0.123 -0.03469 0.5 0.5 0.5 -0.5  /tag_27 /tool_tag_27 300"/>
   <node pkg="tf" type="static_transform_publisher" name="tagconverter_21" args="0 -0.123 -0.03469 -0.5 0.5 0.5 0.5  /tag_21 /tool_tag_21 300"/>
   <node pkg="tf" type="static_transform_publisher" name="tagconverter_22" args="0 -0.123 -0.03469 -0.6830121 -0.183015 -0.183015 0.6830121  /tag_22 /tool_tag_22 300"/>
