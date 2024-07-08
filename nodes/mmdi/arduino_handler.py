@@ -79,6 +79,20 @@ class ArduinoHandler():
                         self.ser.write(bytearray('s', 'ascii'))
                     elif data.data=="y":
                         self.ser.write(bytearray('y', 'ascii'))
+                    elif data.data=="y":
+                        self.ser.write(bytearray('y', 'ascii'))
+                    elif data.data=="5":
+                        self.ser.write(bytearray('5', 'ascii'))
+                    elif data.data=="4":
+                        self.ser.write(bytearray('4', 'ascii'))
+                    elif data.data=="3":
+                        self.ser.write(bytearray('3', 'ascii'))
+                    elif data.data=="2":
+                        self.ser.write(bytearray('2', 'ascii'))
+                    elif data.data=="1":
+                        self.ser.write(bytearray('1', 'ascii'))
+                    elif data.data=="0":
+                        self.ser.write(bytearray('0', 'ascii'))
                     elif data.data=="e":
                         self.ser.write(bytearray('e', 'ascii'))
                     else:
