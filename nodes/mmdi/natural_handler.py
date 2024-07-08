@@ -57,8 +57,6 @@ def camera_pose_residual(x,curr_pos, curr_rotvec, odom_pos,odom_q,trans_tool_cam
     R_tool = ScipyR.from_quat(q_tmp)
     cam_q = (R_tool * R_tool_cam).as_quat()
 
-
-    
     desired_dist = 0.3
     cam_to_odom = odom_pos - cam_pos
     cam_to_odom_camframe = ScipyR.from_quat(cam_q).apply(cam_to_odom)
@@ -73,10 +71,13 @@ def camera_pose_residual(x,curr_pos, curr_rotvec, odom_pos,odom_q,trans_tool_cam
     loss2 = np.linalg.norm(x[0:3])+0.1*np.linalg.norm(x[3:6]) 
 
 
-    # TODO: add a loss away from edges of space
+    # 30 degree angle for viewing!
+    vec_odom_cam = (cam_pos-odom_pos) / np.linalg.norm(cam_pos-odom_pos)
+    z_axis_odom = ScipyR.from_quat(odom_q).as_matrix()[:,2]
+    loss3 = (np.dot(vec_odom_cam,z_axis_odom)-0.866)**2.0 # ideal value is 30 degree (cos(30)=0.866)
 
-    weights = np.array([100.0, 100.0, 0.5])
-    loss = np.array([loss0, loss1, loss2])
+    weights = np.array([100.0, 100.0, 0.5, 100.0])
+    loss = np.array([loss0, loss1, loss2, loss3])
     # print(np.multiply(weights,loss))
     return np.dot(weights,loss)
 
@@ -123,7 +124,8 @@ class NaturalHandler():
                     trans = self.tfBuffer.lookup_transform('head_camera', 'odom', rospy.Time())
                     now = rospy.get_rostime()
                     
-                    if abs(trans.transform.translation.z)>0.25 and (now.secs - trans.header.stamp.secs)<1:
+                    # initial observation needs to be at least 10 cm away
+                    if abs(trans.transform.translation.z)>0.10 and (now.secs - trans.header.stamp.secs)<1:
                         self.odom_seen_pub.publish(Bool(True))
                 except Exception as e:
                     pass
@@ -152,7 +154,7 @@ class NaturalHandler():
                         trans_odom = self.tfBuffer.lookup_transform('base', 'odom', rospy.Time())
                         odom_pos  = np.array([trans_odom.transform.translation.x, trans_odom.transform.translation.y, trans_odom.transform.translation.z])
                         odom_q = np.array([trans_odom.transform.rotation.x, trans_odom.transform.rotation.y, trans_odom.transform.rotation.z, trans_odom.transform.rotation.w])    
-                        # TODO: only if odom is not stale
+                   
 
                         stale = (rospy.Time.now() - trans_odom.header.stamp).to_sec()>0.4
                         print(stale)
@@ -202,7 +204,10 @@ class NaturalHandler():
 
         bounds = [(-delta_pos_max,delta_pos_max),(-delta_pos_max,delta_pos_max),(-delta_pos_max,delta_pos_max),(-delta_rot_max,delta_rot_max),(-delta_rot_max,delta_rot_max),(-delta_rot_max,delta_rot_max)]
 
-        # TODO: update bounds based on constraints?
+        # TODO: this code hasn't been tested (next 3 lines)
+        for ii in range(3):
+            bounds[ii][0] = np.maximum(-delta_pos_max,cart_mins[ii]-curr_pos[ii])
+            bounds[ii][1] = np.minimum(delta_pos_max,cart_maxs[ii]-curr_pos[ii])
 
         pose0 = np.zeros((6))
         res = minimize(camera_pose_residual, pose0, bounds=bounds,args=(curr_pos, curr_rotvec, odom_pos,odom_q,self.trans_tool_cam), method='SLSQP', options={'disp': False,'maxiter': 50})
