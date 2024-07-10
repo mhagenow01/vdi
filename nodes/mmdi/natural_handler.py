@@ -74,7 +74,7 @@ def camera_pose_residual(x,curr_pos, curr_rotvec, odom_pos,odom_q,trans_tool_cam
     # 30 degree angle for viewing!
     vec_odom_cam = (cam_pos-odom_pos) / np.linalg.norm(cam_pos-odom_pos)
     z_axis_odom = ScipyR.from_quat(odom_q).as_matrix()[:,2]
-    loss3 = (np.dot(vec_odom_cam,z_axis_odom)-0.866)**2.0 # ideal value is 30 degree (cos(30)=0.866)
+    loss3 = (np.dot(vec_odom_cam,z_axis_odom)-0.7071)**2.0 # ideal value is 30 degree (cos(30)=0.866)
 
     weights = np.array([100.0, 100.0, 0.5, 100.0])
     loss = np.array([loss0, loss1, loss2, loss3])
@@ -196,18 +196,17 @@ class NaturalHandler():
         cart_maxs = np.array([0.3, -0.25, 0.5])
 
         delta_pos_max = 0.001 # 10Hz (i.e., move 10x per second)
-        delta_rot_max = 0.008 # 10Hz
+        delta_rot_max = 0.006 # 10Hz
 
         curr_rotvec = ScipyR.from_quat(curr_q).as_rotvec()
 
-        ang_max = 0.6
+        ang_max = 0.9
 
         bounds = [(-delta_pos_max,delta_pos_max),(-delta_pos_max,delta_pos_max),(-delta_pos_max,delta_pos_max),(-delta_rot_max,delta_rot_max),(-delta_rot_max,delta_rot_max),(-delta_rot_max,delta_rot_max)]
 
         # TODO: this code hasn't been tested (next 3 lines)
         for ii in range(3):
-            bounds[ii][0] = np.maximum(-delta_pos_max,cart_mins[ii]-curr_pos[ii])
-            bounds[ii][1] = np.minimum(delta_pos_max,cart_maxs[ii]-curr_pos[ii])
+            bounds[ii] = (np.maximum(-delta_pos_max,cart_mins[ii]-curr_pos[ii]), np.minimum(delta_pos_max,cart_maxs[ii]-curr_pos[ii]))
 
         pose0 = np.zeros((6))
         res = minimize(camera_pose_residual, pose0, bounds=bounds,args=(curr_pos, curr_rotvec, odom_pos,odom_q,self.trans_tool_cam), method='SLSQP', options={'disp': False,'maxiter': 50})

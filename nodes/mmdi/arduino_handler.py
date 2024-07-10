@@ -95,8 +95,8 @@ class ArduinoHandler():
                         self.ser.write(bytearray('0', 'ascii'))
                     elif data.data=="e":
                         self.ser.write(bytearray('e', 'ascii'))
-                    else:
-                        self.ser.write(bytearray('e', 'ascii'))
+                    # else:
+                    #     self.ser.write(bytearray('e', 'ascii'))
                     serialsent = True
                     self.curr_val = data.data
                 except:

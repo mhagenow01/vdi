@@ -171,7 +171,12 @@ class ModeHandler():
             if self.mode==1: # TELEOPERATION
                 # valid tx is to 2 and 4
 
-               
+                # change color based on force (intensity of color)
+                F_global = np.array([self.wrenchglobal.force.x, self.wrenchglobal.force.y, self.wrenchglobal.force.z])
+                if np.linalg.norm(F_global) > 10:
+                        self.led_pub.publish(String(str(int((25-np.linalg.norm(F_global))/3))))
+                else:
+                    self.led_pub.publish(String(self.mode_colors[self.mode]))
 
 
                 # play sound for force sensor
@@ -186,7 +191,8 @@ class ModeHandler():
                     self.freedrive_pub.publish(Bool(True))
 
                 # too much applied force also switches to kinesthetic
-                if(abs(self.uniforce>25) or np.linalg.norm(self.wrenchglobal)>25):
+                
+                if(abs(self.uniforce>25) or np.linalg.norm(F_global)>25):
                     new_mode = 2
                     self.freedrive_pub.publish(Bool(True))
 
@@ -249,13 +255,7 @@ class ModeHandler():
             # Set mode and command LEDs
             if new_mode!=self.mode:
                 self.mode = new_mode
-                if self.mode==1: # teleoperation
-                    if abs(self.uniforce) > 10:
-                        self.led_pub.publish(String(int((25-abs(self.uniforce))/3)))
-                    else:
-                        self.led_pub.publish(String(self.mode_colors[self.mode]))
-                else:
-                    self.led_pub.publish(String(self.mode_colors[self.mode]))
+                self.led_pub.publish(String(self.mode_colors[self.mode]))
             self.mode_pub.publish(Int32(self.mode))
             rate.sleep()
     
