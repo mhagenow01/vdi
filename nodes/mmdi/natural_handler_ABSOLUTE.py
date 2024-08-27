@@ -31,18 +31,17 @@ def signal_handler(nh,sig, frame):
         nh._p.terminate() 
     sys.exit(0)
 
-def camera_pose_residual(x,curr_pos, curr_rotvec, odom_pos,odom_q,trans_tool_cam):
+def camera_pose_residual(x, odom_pos,odom_q,trans_tool_cam,verbose):
     ''' Calculates a loss for camera shared control objectives '''
 
     pose_temp = PoseStamped()
     pose_temp.header.frame_id = 'map'
     pose_temp.header.stamp = rospy.Time.now()
-    pose_temp.pose.position.x = curr_pos[0]+x[0]
-    pose_temp.pose.position.y = curr_pos[1]+x[1]
-    pose_temp.pose.position.z = curr_pos[2]+x[2]
+    pose_temp.pose.position.x = x[0]
+    pose_temp.pose.position.y = x[1]
+    pose_temp.pose.position.z = x[2]
 
-    rotvec_temp = curr_rotvec + np.array([x[3], x[4], 0.0])
-    q_tmp = ScipyR.from_rotvec(rotvec_temp).as_quat()
+    q_tmp = ScipyR.from_rotvec(x[3:6]).as_quat()
 
     pose_temp.pose.orientation.x = q_tmp[0]
     pose_temp.pose.orientation.y = q_tmp[1]
@@ -57,18 +56,27 @@ def camera_pose_residual(x,curr_pos, curr_rotvec, odom_pos,odom_q,trans_tool_cam
     R_tool = ScipyR.from_quat(q_tmp)
     cam_q = (R_tool * R_tool_cam).as_quat()
 
-    desired_dist = 0.30
+    desired_dist = 0.3
     cam_to_odom = odom_pos - cam_pos
     cam_to_odom_camframe = ScipyR.from_quat(cam_q).apply(cam_to_odom)
-    loss0 = (abs(cam_to_odom_camframe[2])-desired_dist)**2.0 # tracking dist in z-axis of camera frame
+    # if verbose:
+    #     print("CAM TO ODOM CAMFRAME: ",cam_to_odom_camframe[2])
+    loss0 = (cam_to_odom_camframe[2]-desired_dist)**2.0 # tracking dist in z-axis of camera frame
 
 
     vec_cam_odom = (odom_pos-cam_pos) / np.linalg.norm(odom_pos-cam_pos)
+    # if verbose:
+    #     print("Vec Cam Odom: ",vec_cam_odom)
     z_axis_cam = ScipyR.from_quat(cam_q).as_matrix()[:,2]
+    # if verbose:
+    #     print("Z-axis cam:",z_axis_cam)
     loss1 = (np.dot(vec_cam_odom,z_axis_cam)-1.0)**2.0
 
     # penalize moving more than rotating
     loss2 = np.linalg.norm(x[0:3])+0.1*np.linalg.norm(x[3:6]) 
+
+
+    # MAYBE objectives... closer to the center of the range (maybe instead of the 30 degree)
 
 
     # 30 degree angle for viewing!
@@ -76,9 +84,23 @@ def camera_pose_residual(x,curr_pos, curr_rotvec, odom_pos,odom_q,trans_tool_cam
     z_axis_odom = ScipyR.from_quat(odom_q).as_matrix()[:,2]
     loss3 = (np.dot(vec_odom_cam,z_axis_odom)-0.7071)**2.0 # ideal value is 30 degree (cos(30)=0.866)
 
-    weights = np.array([100.0, 100.0, 0.0, 10.0])
-    loss = np.array([loss0, loss1, loss2, loss3])
-    # print(np.multiply(weights,loss))
+
+    desired_pos = np.array([0.0, -0.4, 0.35])
+    loss4 = np.linalg.norm(np.array(x[0:3]-desired_pos))**2.0
+
+    loss5 = np.linalg.norm(x[4])**2.0
+
+    weights = np.array([100.0, 100.0, 0.0, 000.0, 2, 0.5])
+    loss = np.array([loss0, loss1, loss2, loss3, loss4, loss5])
+
+    if verbose:
+        print(np.round(loss,4))
+        # print("X:",np.round(x[0:3],3))
+    
+    # TODO: remove this after troubleshooting!!!!!
+    # if verbose:
+    #     input("WAITING FOR INPUT~~")
+
     return np.dot(weights,loss)
 
 
@@ -117,7 +139,7 @@ class NaturalHandler():
 
     def main(self):
         rate = rospy.Rate(10) # hz
-        last_beep = time.time()
+        lastbeept = time.time()
         while not rospy.is_shutdown():
             # print(self.robot_camera_active,self.robot_pose_received)
             if not self.robot_camera_active:
@@ -155,26 +177,19 @@ class NaturalHandler():
                         trans_odom = self.tfBuffer.lookup_transform('base', 'odom', rospy.Time())
                         odom_pos  = np.array([trans_odom.transform.translation.x, trans_odom.transform.translation.y, trans_odom.transform.translation.z])
                         odom_q = np.array([trans_odom.transform.rotation.x, trans_odom.transform.rotation.y, trans_odom.transform.rotation.z, trans_odom.transform.rotation.w])    
-                   
-
-                        stale = (rospy.Time.now() - trans_odom.header.stamp).to_sec()>0.4
-                        # print(stale)
-                        if not stale:
-                            # print(self.curr_pos,self.curr_q,odom_pos,odom_q)
-                            new_pos, new_q = self.optimizePose(self.curr_pos, self.curr_q, odom_pos, odom_q, self.starting_pos, self.starting_q)
-                            self.curr_pos = new_pos.copy()
-                            self.curr_q = new_q.copy()
-                        else:
-                            if((time.time()-last_beep)>1.0):
-                                os.system('play -nq -t alsa synth {} sine {}'.format(0.2, 440))
-                                last_beep = time.time()
-                    
                     except Exception as e:
-                        # exc_type, exc_obj, exc_tb = sys.exc_info()
-                        # fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-                        print(e)
-                        # print(exc_type, fname, exc_tb.tb_lineno)
-    
+                        print(e)    
+
+                    stale = (rospy.Time.now() - trans_odom.header.stamp).to_sec()>1.0
+                    print(stale)
+                    if not stale:
+                        new_pos, new_q = self.optimizePose(self.curr_pos, self.curr_q, odom_pos, odom_q, self.starting_pos, self.starting_q)
+                        self.curr_pos = new_pos.copy()
+                        self.curr_q = new_q.copy()
+                    else:
+                        if time.time()-lastbeept > 0.8:
+                            lastbeept = time.time()
+                            os.system('play -nq -t alsa synth {} sine {}'.format(0.2, 440))
                     
             rate.sleep()
         if self._p is not None:
@@ -199,72 +214,102 @@ class NaturalHandler():
 
     def optimizePose(self, curr_pos, curr_q, odom_pos, odom_q, starting_pos, starting_q):
 
-        try:
-            # Set up limits (in the toolnew [command] frame)
-            cart_mins = np.array([-0.3, -0.55, 0.3])
-            cart_maxs = np.array([0.3, -0.3, 0.5])
+        # Set up limits (in the toolnew [command] frame)
+        mins = np.array([-0.3, -0.45, 0.2, -0.45,-0.8,-1.57079])
+        maxs = np.array([0.3, -0.25, 0.45, 0.0, 0.8, -1.50079])
 
-            delta_pos_max = 0.0006 # 10Hz (i.e., move 10x per second)
-            delta_rot_max = 0.015 # 10Hz
+        delta_pos_max = 0.001 # 10Hz (i.e., move 10x per second)
+        delta_rot_max = 0.01 # 10Hz
 
-            curr_rotvec = ScipyR.from_quat(curr_q).as_rotvec()
+        # TODO: only optimize if inside range ... otherwise, march into range...
 
-            ang_max = 0.9
+        curr_rotvec = ScipyR.from_quat(curr_q).as_rotvec()
+        pose0 = np.concatenate((curr_pos, curr_rotvec))
 
-            bounds = [(-delta_pos_max,delta_pos_max),(-delta_pos_max,delta_pos_max),(-delta_pos_max,delta_pos_max),(-0.0*delta_rot_max,0.0*delta_rot_max),(-delta_rot_max,delta_rot_max)]
+        # optimization can spit out just on the other side of the bound
+        eps = 1e-5
 
-            # TODO: this code hasn't been tested (next 3 lines)
+        ready_to_optimize = True
+        for ii in range(6):
+            if pose0[ii] < (mins[ii]-eps):
+                ready_to_optimize = False
+                if ii<3:
+                    pose0[ii] = pose0[ii]+2*delta_pos_max
+                else:
+                    pose0[ii] = pose0[ii]+5*delta_rot_max
+                
+                # possible overshoot for small ranges
+                if pose0[ii] >= maxs[ii]:
+                    pose0[ii] = (mins[ii]+maxs[ii])/2.0
+            if pose0[ii] > (maxs[ii]+eps):
+                ready_to_optimize = False
+                if ii<3:
+                    pose0[ii] = pose0[ii]-2*delta_pos_max
+                else:
+                    pose0[ii] = pose0[ii]-5*delta_rot_max
+                
+                # possible overshoot for small ranges
+                if pose0[ii] <= mins[ii]:
+                    pose0[ii] = (mins[ii]+maxs[ii])/2.0
+
+        if ready_to_optimize:
+
+            bounds = []
+
+            ttmp = time.time()
+
+            # position
             for ii in range(3):
-                bounds[ii] = (np.maximum(-delta_pos_max,cart_mins[ii]-curr_pos[ii]), np.minimum(delta_pos_max,cart_maxs[ii]-curr_pos[ii]))
+                min_tmp = max(mins[ii],curr_pos[ii]-delta_pos_max)
+                max_tmp = min(maxs[ii],curr_pos[ii]+delta_pos_max)
+                bounds.append((min_tmp,max_tmp))
+            
             
 
-            pose0 = np.zeros((5))
-            res = minimize(camera_pose_residual, pose0, bounds=bounds,args=(curr_pos, curr_rotvec, odom_pos,odom_q,self.trans_tool_cam), method='SLSQP', options={'disp': False,'maxiter': 50})
+            # print("CURR ROTVEC: ",curr_rotvec)
+            # input("HI")
 
-            # print(res)
+            # orientation
+            for ii in range(3):
+                min_tmp = max(mins[ii+3],curr_rotvec[ii]-delta_rot_max)
+                max_tmp = min(maxs[ii+3],curr_rotvec[ii]+delta_rot_max)
+                bounds.append((min_tmp,max_tmp))
+
+            pose0 = np.zeros((6))
+            ttmp = time.time()
+            res = minimize(camera_pose_residual, pose0, bounds=bounds,args=(odom_pos,odom_q,self.trans_tool_cam,False), method='SLSQP', options={'disp': False,'maxiter': 30})
+
+            # For Troubleshooting
+            ttmp = time.time()
+
+            _ = camera_pose_residual(res.x, odom_pos, odom_q, self.trans_tool_cam, True)
             # print(res.x)
             
-            # Saturation TODO: make sure this works :)
-            x_tmp = res.x.copy()
-            # x_tmp[3] = 0.0
-            # x_tmp[5] = 0.0
-            print("X:",x_tmp)
-            new_pos = curr_pos+x_tmp[0:3]
-            new_pos = np.minimum(cart_maxs,new_pos)
-            new_pos = np.maximum(cart_mins,new_pos)
-            new_ang = curr_rotvec + np.array([x_tmp[3], x_tmp[4], 0.0])
+            new_pos = res.x[0:3].copy()
+            new_rotvec = res.x[3:6]
+        else:
+            print("NOT READY -- ",pose0)
+            new_pos = pose0[0:3]
+            new_rotvec = pose0[3:6]
+        
+        new_q = ScipyR.from_rotvec(new_rotvec).as_quat()
 
-            R_orig_ang = ScipyR.from_quat(starting_q)
-            R_new_ang = ScipyR.from_rotvec(new_ang)
-            delta = np.linalg.norm((R_new_ang.inv()*R_orig_ang).as_rotvec())
-            print(delta)
-            if delta > ang_max:
-                slerper = Slerp([0,delta], [R_orig_ang, R_new_ang])
-                new_ang = slerper(ang_max).as_rotvec()
-            
-            new_q = ScipyR.from_rotvec(new_ang).as_quat()
+        # print(new_pos,new_q)
+        
+        # TODO: test publish desired pose
+        pose_out = PoseStamped()
+        pose_out.header.frame_id = 'map'
+        pose_out.header.stamp = rospy.Time.now()
+        pose_out.pose.position.x = new_pos[0]
+        pose_out.pose.position.y = new_pos[1]
+        pose_out.pose.position.z = new_pos[2]
+        pose_out.pose.orientation.x = new_q[0]
+        pose_out.pose.orientation.y = new_q[1]
+        pose_out.pose.orientation.z = new_q[2]
+        pose_out.pose.orientation.w = new_q[3]
+        self.pose_pub.publish(pose_out)
 
-            print(new_pos,new_q)
-            
-            # TODO: test publish desired pose
-            pose_out = PoseStamped()
-            pose_out.header.frame_id = 'map'
-            pose_out.header.stamp = rospy.Time.now()
-            pose_out.pose.position.x = new_pos[0]
-            pose_out.pose.position.y = new_pos[1]
-            pose_out.pose.position.z = new_pos[2]
-            pose_out.pose.orientation.x = new_q[0]
-            pose_out.pose.orientation.y = new_q[1]
-            pose_out.pose.orientation.z = new_q[2]
-            pose_out.pose.orientation.w = new_q[3]
-            self.pose_pub.publish(pose_out)
-
-            return new_pos, new_q
-        except Exception as e:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-            print(e)
-            # print(exc_type, fname, exc_tb.tb_lineno)
+        return new_pos, new_q
 
 if __name__ == "__main__":
     nh = NaturalHandler()

@@ -222,7 +222,7 @@ class ModeHandler():
                 if self.toolContact==0:
                     if self.lastNoContact is None:
                         self.lastNoContact = time.time()
-                    if (time.time()-self.lastNoContact) > 1:
+                    if (time.time()-self.lastNoContact) > 2:
                         new_mode = 4
                         self.freedrive_pub.publish(Bool(False))
                         self.startmodefour = time.time()

@@ -41,7 +41,7 @@ def camera_pose_residual(x,curr_pos, curr_rotvec, odom_pos,odom_q,trans_tool_cam
     pose_temp.pose.position.y = curr_pos[1]+x[1]
     pose_temp.pose.position.z = curr_pos[2]+x[2]
 
-    rotvec_temp = curr_rotvec + np.array([x[3], x[4], 0.0])
+    rotvec_temp = curr_rotvec + x[3:6]
     q_tmp = ScipyR.from_rotvec(rotvec_temp).as_quat()
 
     pose_temp.pose.orientation.x = q_tmp[0]
@@ -57,7 +57,7 @@ def camera_pose_residual(x,curr_pos, curr_rotvec, odom_pos,odom_q,trans_tool_cam
     R_tool = ScipyR.from_quat(q_tmp)
     cam_q = (R_tool * R_tool_cam).as_quat()
 
-    desired_dist = 0.30
+    desired_dist = 0.3
     cam_to_odom = odom_pos - cam_pos
     cam_to_odom_camframe = ScipyR.from_quat(cam_q).apply(cam_to_odom)
     loss0 = (abs(cam_to_odom_camframe[2])-desired_dist)**2.0 # tracking dist in z-axis of camera frame
@@ -76,7 +76,7 @@ def camera_pose_residual(x,curr_pos, curr_rotvec, odom_pos,odom_q,trans_tool_cam
     z_axis_odom = ScipyR.from_quat(odom_q).as_matrix()[:,2]
     loss3 = (np.dot(vec_odom_cam,z_axis_odom)-0.7071)**2.0 # ideal value is 30 degree (cos(30)=0.866)
 
-    weights = np.array([100.0, 100.0, 0.0, 10.0])
+    weights = np.array([100.0, 100.0, 0.5, 100.0])
     loss = np.array([loss0, loss1, loss2, loss3])
     # print(np.multiply(weights,loss))
     return np.dot(weights,loss)
@@ -117,7 +117,6 @@ class NaturalHandler():
 
     def main(self):
         rate = rospy.Rate(10) # hz
-        last_beep = time.time()
         while not rospy.is_shutdown():
             # print(self.robot_camera_active,self.robot_pose_received)
             if not self.robot_camera_active:
@@ -158,23 +157,16 @@ class NaturalHandler():
                    
 
                         stale = (rospy.Time.now() - trans_odom.header.stamp).to_sec()>0.4
-                        # print(stale)
+                        print(stale)
                         if not stale:
-                            # print(self.curr_pos,self.curr_q,odom_pos,odom_q)
                             new_pos, new_q = self.optimizePose(self.curr_pos, self.curr_q, odom_pos, odom_q, self.starting_pos, self.starting_q)
                             self.curr_pos = new_pos.copy()
                             self.curr_q = new_q.copy()
                         else:
-                            if((time.time()-last_beep)>1.0):
-                                os.system('play -nq -t alsa synth {} sine {}'.format(0.2, 440))
-                                last_beep = time.time()
+                            os.system('play -nq -t alsa synth {} sine {}'.format(0.2, 440))
                     
                     except Exception as e:
-                        # exc_type, exc_obj, exc_tb = sys.exc_info()
-                        # fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-                        print(e)
-                        # print(exc_type, fname, exc_tb.tb_lineno)
-    
+                        print(e)    
                     
             rate.sleep()
         if self._p is not None:
@@ -199,72 +191,61 @@ class NaturalHandler():
 
     def optimizePose(self, curr_pos, curr_q, odom_pos, odom_q, starting_pos, starting_q):
 
-        try:
-            # Set up limits (in the toolnew [command] frame)
-            cart_mins = np.array([-0.3, -0.55, 0.3])
-            cart_maxs = np.array([0.3, -0.3, 0.5])
+        # Set up limits (in the toolnew [command] frame)
+        cart_mins = np.array([-0.3, -0.55, 0.2])
+        cart_maxs = np.array([0.3, -0.25, 0.5])
 
-            delta_pos_max = 0.0006 # 10Hz (i.e., move 10x per second)
-            delta_rot_max = 0.015 # 10Hz
+        delta_pos_max = 0.001 # 10Hz (i.e., move 10x per second)
+        delta_rot_max = 0.006 # 10Hz
 
-            curr_rotvec = ScipyR.from_quat(curr_q).as_rotvec()
+        curr_rotvec = ScipyR.from_quat(curr_q).as_rotvec()
 
-            ang_max = 0.9
+        ang_max = 0.9
 
-            bounds = [(-delta_pos_max,delta_pos_max),(-delta_pos_max,delta_pos_max),(-delta_pos_max,delta_pos_max),(-0.0*delta_rot_max,0.0*delta_rot_max),(-delta_rot_max,delta_rot_max)]
+        bounds = [(-delta_pos_max,delta_pos_max),(-delta_pos_max,delta_pos_max),(-delta_pos_max,delta_pos_max),(-delta_rot_max,delta_rot_max),(-delta_rot_max,delta_rot_max),(-delta_rot_max,delta_rot_max)]
 
-            # TODO: this code hasn't been tested (next 3 lines)
-            for ii in range(3):
-                bounds[ii] = (np.maximum(-delta_pos_max,cart_mins[ii]-curr_pos[ii]), np.minimum(delta_pos_max,cart_maxs[ii]-curr_pos[ii]))
-            
+        # TODO: this code hasn't been tested (next 3 lines)
+        for ii in range(3):
+            bounds[ii] = (np.maximum(-delta_pos_max,cart_mins[ii]-curr_pos[ii]), np.minimum(delta_pos_max,cart_maxs[ii]-curr_pos[ii]))
 
-            pose0 = np.zeros((5))
-            res = minimize(camera_pose_residual, pose0, bounds=bounds,args=(curr_pos, curr_rotvec, odom_pos,odom_q,self.trans_tool_cam), method='SLSQP', options={'disp': False,'maxiter': 50})
+        pose0 = np.zeros((6))
+        res = minimize(camera_pose_residual, pose0, bounds=bounds,args=(curr_pos, curr_rotvec, odom_pos,odom_q,self.trans_tool_cam), method='SLSQP', options={'disp': False,'maxiter': 50})
 
-            # print(res)
-            # print(res.x)
-            
-            # Saturation TODO: make sure this works :)
-            x_tmp = res.x.copy()
-            # x_tmp[3] = 0.0
-            # x_tmp[5] = 0.0
-            print("X:",x_tmp)
-            new_pos = curr_pos+x_tmp[0:3]
-            new_pos = np.minimum(cart_maxs,new_pos)
-            new_pos = np.maximum(cart_mins,new_pos)
-            new_ang = curr_rotvec + np.array([x_tmp[3], x_tmp[4], 0.0])
+        # print(res)
+        # print(res.x)
+         
+        # Saturation TODO: make sure this works :)
+        new_pos = curr_pos+res.x[0:3]
+        new_pos = np.minimum(cart_maxs,new_pos)
+        new_pos = np.maximum(cart_mins,new_pos)
+        new_ang = curr_rotvec + res.x[3:6]
 
-            R_orig_ang = ScipyR.from_quat(starting_q)
-            R_new_ang = ScipyR.from_rotvec(new_ang)
-            delta = np.linalg.norm((R_new_ang.inv()*R_orig_ang).as_rotvec())
-            print(delta)
-            if delta > ang_max:
-                slerper = Slerp([0,delta], [R_orig_ang, R_new_ang])
-                new_ang = slerper(ang_max).as_rotvec()
-            
-            new_q = ScipyR.from_rotvec(new_ang).as_quat()
+        R_orig_ang = ScipyR.from_quat(starting_q)
+        R_new_ang = ScipyR.from_rotvec(new_ang)
+        delta = np.linalg.norm((R_new_ang.inv()*R_orig_ang).as_rotvec())
+        print(delta)
+        if delta > ang_max:
+            slerper = Slerp([0,delta], [R_orig_ang, R_new_ang])
+            new_ang = slerper(ang_max).as_rotvec()
+        
+        new_q = ScipyR.from_rotvec(new_ang).as_quat()
 
-            print(new_pos,new_q)
-            
-            # TODO: test publish desired pose
-            pose_out = PoseStamped()
-            pose_out.header.frame_id = 'map'
-            pose_out.header.stamp = rospy.Time.now()
-            pose_out.pose.position.x = new_pos[0]
-            pose_out.pose.position.y = new_pos[1]
-            pose_out.pose.position.z = new_pos[2]
-            pose_out.pose.orientation.x = new_q[0]
-            pose_out.pose.orientation.y = new_q[1]
-            pose_out.pose.orientation.z = new_q[2]
-            pose_out.pose.orientation.w = new_q[3]
-            self.pose_pub.publish(pose_out)
+        print(new_pos,new_q)
+        
+        # TODO: test publish desired pose
+        pose_out = PoseStamped()
+        pose_out.header.frame_id = 'map'
+        pose_out.header.stamp = rospy.Time.now()
+        pose_out.pose.position.x = new_pos[0]
+        pose_out.pose.position.y = new_pos[1]
+        pose_out.pose.position.z = new_pos[2]
+        pose_out.pose.orientation.x = new_q[0]
+        pose_out.pose.orientation.y = new_q[1]
+        pose_out.pose.orientation.z = new_q[2]
+        pose_out.pose.orientation.w = new_q[3]
+        self.pose_pub.publish(pose_out)
 
-            return new_pos, new_q
-        except Exception as e:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-            print(e)
-            # print(exc_type, fname, exc_tb.tb_lineno)
+        return new_pos, new_q
 
 if __name__ == "__main__":
     nh = NaturalHandler()
