@@ -107,12 +107,12 @@ class ModeHandler():
             # print("   F_ft:",F_local[2])
 
             # use sample counting to get around filter induced debouncing
-            if (F_local[2]-self.uniforce)>8: # only when pulling down
+            if (F_local[2]-self.uniforce)>10: # only when pulling down
                 self.discrepancy_samps += 1
             else:
                 self.discrepancy_samps = 0 
 
-            if self.discrepancy_samps >= 3: #3/5 seconds
+            if self.discrepancy_samps >= 4: #4/5 seconds
                 return True
             else:
                 return False
@@ -180,9 +180,9 @@ class ModeHandler():
 
 
                 # play sound for force sensor
-                if abs(self.uniforce)>0.5*9.8:
-                    print("   PLAYING: ",66*abs(self.uniforce)-2)
-                    os.system('play -nq -t alsa synth {} sine {}'.format(0.2, 66*(abs(self.uniforce)-0.5*9.8)))
+                if abs(self.uniforce)>0.75*9.8:
+                    # print("   PLAYING: ",66*abs(self.uniforce)-2)
+                    os.system('play -nq -t alsa synth {} sine {}'.format(0.2, 66*(abs(self.uniforce)-0.7*9.8)))
                 
 
                 # Switch to Kinesthetic (2)

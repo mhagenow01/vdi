@@ -216,7 +216,7 @@ class NaturalHandler():
 
         # Set up limits (in the toolnew [command] frame)
         mins = np.array([-0.3, -0.45, 0.2, -0.45,-0.8,-1.57079])
-        maxs = np.array([0.3, -0.25, 0.45, 0.0, 0.8, -1.50079])
+        maxs = np.array([0.3, -0.25, 0.55, 0.0, 0.8, -1.50079])
 
         delta_pos_max = 0.001 # 10Hz (i.e., move 10x per second)
         delta_rot_max = 0.01 # 10Hz
